@@ -3,7 +3,7 @@ title: Misc
 order: 98
 ---
 
-# Basics
+# Overview
 
 * [Troubleshooting](./troubleshooting.md)
 * [Telemetry](./telemetry.md)
