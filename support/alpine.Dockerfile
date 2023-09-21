@@ -55,7 +55,6 @@ FROM garden-alpine-base-$VARIANT as garden-alpine-base
 # Note: This Dockerfile is run with dist/linux-amd64 as the context root
 ADD --chown=$USER:root . /garden
 ENV PATH /garden:$PATH
-RUN cd /garden/static && git init
 
 WORKDIR $HOME
 RUN GARDEN_DISABLE_ANALYTICS=true GARDEN_DISABLE_VERSION_CHECK=true garden util fetch-tools --all --garden-image-build
