@@ -7,18 +7,16 @@
  */
 
 import Joi from "@hapi/joi"
-import normalize from "normalize-path"
 import { sortBy, pick } from "lodash"
 import { createHash } from "crypto"
 import { validateSchema } from "../config/validation"
-import { join, relative, isAbsolute, sep } from "path"
-import { DOCS_BASE_URL, GARDEN_VERSIONFILE_NAME as GARDEN_TREEVERSION_FILENAME } from "../constants"
+import { relative, sep } from "path"
+import { DOCS_BASE_URL } from "../constants"
 import { pathExists, readFile, writeFile } from "fs-extra"
 import { ConfigurationError } from "../exceptions"
 import { ExternalSourceType, getRemoteSourceLocalPath, getRemoteSourcesPath } from "../util/ext-source-util"
 import { ModuleConfig, serializeConfig } from "../config/module"
 import type { Log } from "../logger/log-entry"
-import { treeVersionSchema } from "../config/common"
 import { dedent, splitLast } from "../util/string"
 import { fixedProjectExcludes } from "../util/fs"
 import { pathToCacheContext, TreeCache } from "../cache"
@@ -154,9 +152,13 @@ export abstract class VcsHandler {
   abstract name: string
 
   abstract getRepoRoot(log: Log, path: string): Promise<string>
+
   abstract getFiles(params: GetFilesParams): Promise<VcsFile[]>
+
   abstract ensureRemoteSource(params: RemoteSourceParams): Promise<string>
+
   abstract updateRemoteSource(params: RemoteSourceParams): Promise<void>
+
   abstract getPathInfo(log: Log, path: string): Promise<VcsInfo>
 
   clearTreeCache() {
@@ -256,14 +258,6 @@ export abstract class VcsHandler {
     this.cache.invalidateUp(log, pathToCacheContext(path))
   }
 
-  async resolveTreeVersion(params: GetTreeVersionParams): Promise<TreeVersion> {
-    // the version file is used internally to specify versions outside of source control
-    const path = getConfigBasePath(params.config)
-    const versionFilePath = join(path, GARDEN_TREEVERSION_FILENAME)
-    const fileVersion = await readTreeVersionFile(versionFilePath)
-    return fileVersion || (await this.getTreeVersion(params))
-  }
-
   /**
    * Returns a map of the optimal paths for each of the given action/module source path.
    * This is used to avoid scanning more of each git repository than necessary, and
@@ -355,28 +349,6 @@ async function readVersionFile(path: string, schema: Joi.Schema): Promise<any> {
       message: `Unable to parse ${path} as valid version file: ${error}`,
     })
   }
-}
-
-export async function readTreeVersionFile(path: string): Promise<TreeVersion | null> {
-  return readVersionFile(path, treeVersionSchema())
-}
-
-/**
- * Writes a normalized TreeVersion file to the specified directory
- *
- * @param dir The directory to write the file to
- * @param version The TreeVersion for the directory
- */
-export async function writeTreeVersionFile(dir: string, version: TreeVersion) {
-  const processed = {
-    ...version,
-    files: version.files
-      // Always write relative paths, normalized to POSIX style
-      .map((f) => normalize(isAbsolute(f) ? relative(dir, f) : f))
-      .filter((f) => f !== GARDEN_TREEVERSION_FILENAME),
-  }
-  const path = join(dir, GARDEN_TREEVERSION_FILENAME)
-  await writeFile(path, JSON.stringify(processed, null, 4) + "\n")
 }
 
 /**
