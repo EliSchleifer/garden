@@ -19,7 +19,6 @@ import { defer, exec } from "../util/util"
 import { Log } from "../logger/log-entry"
 import parseGitConfig from "parse-git-config"
 import { getDefaultProfiler, Profile, Profiler } from "../util/profiling"
-import { STATIC_DIR } from "../constants"
 import isGlob from "is-glob"
 import chalk from "chalk"
 import { pMemoizeDecorator } from "../lib/p-memoize"
@@ -30,14 +29,7 @@ import split2 = require("split2")
 import execa = require("execa")
 import hasha = require("hasha")
 
-const gitConfigAsyncLock = new AsyncLock()
-
 const submoduleErrorSuggestion = `Perhaps you need to run ${chalk.underline(`git submodule update --recursive`)}?`
-const currentPlatformName = process.platform
-
-const gitSafeDirs = new Set<string>()
-let gitSafeDirsRead = false
-let staticDirSafe = false
 
 interface GitEntry extends VcsFile {
   mode: string
@@ -115,101 +107,6 @@ export class GitHandler extends VcsHandler {
     }
   }
 
-  toGitConfigCompatiblePath(path: string, platformName: string): string {
-    // Windows paths require some pre-processing,
-    // see the full list of platform names here: https://nodejs.org/api/process.html#process_process_platform
-    if (platformName !== "win32") {
-      return path
-    }
-
-    // Replace back-slashes with forward-slashes to make paths compatible with .gitconfig in Windows
-    return path.replace(/\\/g, "/")
-  }
-
-  // TODO-0.13.1+ - get rid of this in/after https://github.com/garden-io/garden/pull/4047
-  /**
-   * Checks if a given {@code path} is a valid and safe Git repository.
-   * If it is a valid Git repository owned by another user,
-   * then the static dir will be added to the list of safe directories in .gitconfig.
-   *
-   * Git has stricter repository ownerships checks since 2.36.0,
-   * see https://github.blog/2022-04-18-highlights-from-git-2-36/ for more details.
-   */
-  private async ensureSafeDirGitRepo(log: Log, path: string, failOnPrompt = false): Promise<void> {
-    if (gitSafeDirs.has(path)) {
-      return
-    }
-
-    // Avoid multiple concurrent checks on the same path
-    await this.lock.acquire(`safe-dir:${path}`, async () => {
-      if (gitSafeDirs.has(path)) {
-        return
-      }
-
-      const git = this.gitCli(log, path, failOnPrompt)
-
-      if (!gitSafeDirsRead) {
-        await gitConfigAsyncLock.acquire(".gitconfig", async () => {
-          if (!gitSafeDirsRead) {
-            const gitCli = this.gitCli(log, path, failOnPrompt)
-            try {
-              const safeDirectories = await gitCli("config", "--get-all", "safe.directory")
-              safeDirectories.forEach((safeDir) => gitSafeDirs.add(safeDir))
-            } catch (err) {
-              // ignore the error if there are no safe directories defined
-              log.debug(`Error reading safe directories from the .gitconfig: ${err}`)
-            }
-            gitSafeDirsRead = true
-          }
-        })
-      }
-
-      try {
-        await git("status")
-        gitSafeDirs.add(path)
-      } catch (err) {
-        if (!(err instanceof ChildProcessError)) {
-          throw err
-        }
-
-        // Git has stricter repo ownerships checks since 2.36.0
-        if (err.details.code === 128 && err.details.stderr.toLowerCase().includes("fatal: unsafe repository")) {
-          log.warn(
-            chalk.yellow(
-              `It looks like you're using Git 2.36.0 or newer and the directory "${path}" is owned by someone else. It will be added to safe.directory list in the .gitconfig.`
-            )
-          )
-
-          if (!gitSafeDirs.has(path)) {
-            await gitConfigAsyncLock.acquire(".gitconfig", async () => {
-              if (!gitSafeDirs.has(path)) {
-                const gitConfigCompatiblePath = this.toGitConfigCompatiblePath(path, currentPlatformName)
-                // Add the safe directory globally to be able to run git command outside a (trusted) git repo
-                // Wrap the path in quotes to pass it as a single argument in case if it contains any whitespaces
-                await git("config", "--global", "--add", "safe.directory", `'${gitConfigCompatiblePath}'`)
-                gitSafeDirs.add(path)
-                log.debug(`Configured git to trust repository in ${path}`)
-              }
-            })
-          }
-
-          return
-        } else if (
-          err.details.code === 128 &&
-          err.details.stderr.toLowerCase().includes("fatal: not a git repository")
-        ) {
-          throw new RuntimeError({ message: notInRepoRootErrorMessage(path) })
-        } else {
-          log.error(
-            `Unexpected Git error occurred while running 'git status' from path "${path}". Exit code: ${err.details.code}. Error message: ${err.details.stderr}`
-          )
-          throw err
-        }
-      }
-      gitSafeDirs.add(path)
-    })
-  }
-
   async getRepoRoot(log: Log, path: string, failOnPrompt = false) {
     if (this.repoRoots.has(path)) {
       return this.repoRoots.get(path)
@@ -219,12 +116,6 @@ export class GitHandler extends VcsHandler {
     return this.lock.acquire(`repo-root:${path}`, async () => {
       if (this.repoRoots.has(path)) {
         return this.repoRoots.get(path)
-      }
-
-      // TODO-0.13.1+ - get rid of this in/after https://github.com/garden-io/garden/pull/4047
-      if (!staticDirSafe) {
-        staticDirSafe = true
-        await this.ensureSafeDirGitRepo(log, STATIC_DIR, failOnPrompt)
       }
 
       const git = this.gitCli(log, path, failOnPrompt)
