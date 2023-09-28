@@ -104,18 +104,23 @@ async function prepareEnvironment(
     } else if (clusterType === "k3s") {
       log.debug("Using k3s conformant nginx ingress controller")
 
-      // TODO: use helm to deploy the config defined nginx-k3s.yaml
       // TODO: handle all template strings
+      const valuesYamlPath = join(STATIC_DIR, "kubernetes", "nginx-k3s.values.yaml")
 
-      // const yamlPath = join(STATIC_DIR, "kubernetes", "nginx-k3s.yaml")
-      // const yamlData = (await readFile(yamlPath))
-      //   .toString()
-      //   .replaceAll("${var.namespace}", config.gardenSystemNamespace)
-      // const manifests = loadAll(yamlData)
-      //   .filter(isTruthy)
-      //   .map((m) => m as KubernetesResource)
-      //
-      // await applyYamlFromFile(k8sCtx, log, yamlPath)
+      // TODO: think about proper way of injecting values,
+      //  or consider generating helm values file in the code
+      const yamlData = (await readFile(valuesYamlPath))
+        .toString()
+        .replaceAll("${var.namespace}", config.gardenSystemNamespace)
+      // .replaceAll("${var.system-tolerations}", systemTolerations)
+      // .replaceAll("${var.system-node-selector}", config.systemNodeSelector)
+
+      const manifests = loadAll(yamlData)
+        .filter(isTruthy)
+        .map((m) => m as KubernetesResource)
+
+      // TODO: use helm to deploy the config defined nginx-k3s.yaml
+      //   helm install garden-nginx ingress-nginx/ingress-nginx --version 4.0.13 -f nginx-k3s.values.yaml"
     } else if (clusterType === "minikube") {
       log.debug("Using minikube's ingress addon")
       try {

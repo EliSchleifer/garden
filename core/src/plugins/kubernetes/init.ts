@@ -213,16 +213,17 @@ export async function cleanupEnvironment({
   return {}
 }
 
+export const systemTolerations: V1Toleration[] = [
+  {
+    key: "garden-system",
+    operator: "Equal",
+    value: "true",
+    effect: "NoSchedule",
+  },
+]
+
 export function getKubernetesSystemVariables(config: KubernetesConfig) {
   const systemNamespace = config.gardenSystemNamespace
-  const systemTolerations: V1Toleration[] = [
-    {
-      key: "garden-system",
-      operator: "Equal",
-      value: "true",
-      effect: "NoSchedule",
-    },
-  ]
 
   return {
     "namespace": systemNamespace,

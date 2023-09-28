@@ -1,0 +1,22 @@
+name: ingress-controller
+controller:
+  extraArgs:
+    default-backend-service: ${var.namespace}/default-backend
+  kind: Deployment
+  replicaCount: 1
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  minReadySeconds: 1
+  # TODO:
+  #  tolerations: ${var.system-tolerations}
+  #  nodeSelector: ${var.system-node-selector}
+  admissionWebhooks:
+    enabled: false
+  ingressClassResource:
+    name: nginx
+    enabled: true
+    default: true
+defaultBackend:
+  enabled: false
